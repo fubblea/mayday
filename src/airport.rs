@@ -1,9 +1,10 @@
 use bevy::prelude::*;
 use bevy::sprite::{MaterialMesh2dBundle, Mesh2dHandle};
+use rand::{thread_rng, Rng};
 
 #[derive(Copy, Clone)]
 pub enum AirportLayouts {
-    Layout1,
+    ThreeRandom,
 }
 
 #[derive(Resource)]
@@ -49,27 +50,100 @@ impl AirportPlugin {
 
         commands
             .spawn(Airport { name: name.clone() })
-            .insert(TransformBundle::from(Transform::from_xyz(x, y, 0.0)))
-            .insert(MaterialMesh2dBundle {
-                mesh: Mesh2dHandle(meshes.add(Rectangle::new(25.0, 25.0))),
-                material: materials.add(Color::srgb(1.0, 0.0, 0.0)),
-                ..default()
-            })
+            .insert(SpatialBundle::from(Transform::from_xyz(x, y, 0.0)))
             .with_children(|parent| {
+                // Text Label
                 parent
                     .spawn(Text2dBundle {
                         text: Text::from_section(
                             name,
                             TextStyle {
-                                font_size: 15.0,
+                                font_size: 16.0,
+                                color: Color::srgb(0.0, 0.0, 0.0),
                                 ..default()
                             },
                         )
                         .with_justify(JustifyText::Center),
                         ..default()
                     })
-                    .insert(TransformBundle::from(Transform::from_xyz(0.0, -25.0, 0.0)));
+                    .insert(TransformBundle::from(Transform::from_xyz(0.0, -25.0, 2.0)));
+
+                // Landing Radius
+                parent.spawn(MaterialMesh2dBundle {
+                    mesh: Mesh2dHandle(meshes.add(Circle::new(50.0))),
+                    material: materials.add(Color::srgb(1.0, 204.0 / 255.0, 203.0 / 255.0)),
+                    ..default()
+                });
+
+                // Center
+                parent
+                    .spawn(MaterialMesh2dBundle {
+                        mesh: Mesh2dHandle(meshes.add(Rectangle::new(25.0, 25.0))),
+                        material: materials.add(Color::srgb(1.0, 0.0, 0.0)),
+                        ..default()
+                    })
+                    .insert(TransformBundle::from(Transform::from_xyz(0.0, 0.0, 1.0)));
             });
+    }
+
+    /// Get relative distances from a new airport to the current ones
+    fn get_relative_distances(locs: &[(f32, f32)], new: (f32, f32)) -> Vec<f32> {
+        info!("Checking distance between {:?} and {:?}", &new, locs);
+
+        locs.iter()
+            .map(|x| ((new.0 - x.0).powf(2.0) + (new.1 - x.1).powf(2.0)).sqrt())
+            .collect()
+    }
+
+    /// Check to see if any distance is within threshold
+    fn check_distance_thresh(distances: Vec<f32>, thresh: f32) -> bool {
+        info!("Checking distance tresh {:?} and {:?}", &distances, &thresh);
+
+        distances.iter().any(|x| x.abs() <= thresh)
+    }
+
+    fn create_three_random(
+        commands: &mut Commands,
+        meshes: &mut ResMut<Assets<Mesh>>,
+        materials: &mut ResMut<Assets<ColorMaterial>>,
+    ) {
+        info!("AirportLayouts::ThreeRandom Creating 3 airports with random start locations");
+
+        const DISTANCE_THRESH: f32 = 200.0;
+
+        let mut rng = thread_rng();
+
+        let width_range = (-1.0 * crate::WINDOW_WIDTH / 2.5)..(crate::WINDOW_WIDTH / 2.5);
+        let height_range = (-1.0 * crate::WINDOW_HEIGHT / 2.5)..(crate::WINDOW_HEIGHT / 2.5);
+
+        let mut locs: Vec<(f32, f32)> = Vec::new();
+        for _ in 0..3 {
+            let mut point = (
+                rng.gen_range(width_range.clone()) as f32,
+                rng.gen_range(height_range.clone()) as f32,
+            );
+
+            // Ensure there are no duplicates
+            while Self::check_distance_thresh(
+                Self::get_relative_distances(&locs, point),
+                DISTANCE_THRESH,
+            ) {
+                point = (
+                    rng.gen_range(width_range.clone()) as f32,
+                    rng.gen_range(height_range.clone()) as f32,
+                );
+            }
+
+            info!(
+                "AirportLayouts::ThreeRandom Created airport at {:?}",
+                &point
+            );
+            locs.push(point);
+        }
+
+        Self::spawn_airport(locs[0].0, locs[0].1, "YYZ", commands, meshes, materials);
+        Self::spawn_airport(locs[1].0, locs[1].1, "LAX", commands, meshes, materials);
+        Self::spawn_airport(locs[2].0, locs[2].1, "DXB", commands, meshes, materials);
     }
 
     fn setup_layout(
@@ -79,8 +153,8 @@ impl AirportPlugin {
         config: Res<AirportConfig>,
     ) {
         match config.layout {
-            AirportLayouts::Layout1 => {
-                Self::spawn_airport(0.0, 0.0, "YYZ", &mut commands, &mut meshes, &mut materials);
+            AirportLayouts::ThreeRandom => {
+                AirportPlugin::create_three_random(&mut commands, &mut meshes, &mut materials);
             }
         }
     }
